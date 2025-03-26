@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "560035896557",
+    "project_id": "ica11v2",
+    "storage_bucket": "ica11v2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:560035896557:android:c9de66df3a2f90ddad80e4",
+        "android_client_info": {
+          "package_name": "com.example.ica11"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPUY2VPHTOuTxlNR2ZGf4NCjcAwuIkA4g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
