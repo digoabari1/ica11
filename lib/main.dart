@@ -32,10 +32,16 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-  final TextEditingController _searchController = TextEditingController(); // Added search controller
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _minPriceController = TextEditingController();
+  final TextEditingController _maxPriceController = TextEditingController();
   final CollectionReference _products = FirebaseFirestore.instance.collection('products');
 
-  String _searchQuery = ''; // Variable to store the search query
+  String _searchQuery = '';
+  double? _minPrice;
+  double? _maxPrice;
+
+  String _filterFeedback = '';
 
   // Create or update product
   Future<void> _createOrUpdate([DocumentSnapshot? documentSnapshot]) async {
@@ -107,13 +113,36 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Filter products by price range
+  void _filterProducts() {
+    setState(() {
+      _minPrice = _minPriceController.text.isNotEmpty
+          ? double.tryParse(_minPriceController.text)
+          : null;
+      _maxPrice = _maxPriceController.text.isNotEmpty
+          ? double.tryParse(_maxPriceController.text)
+          : null;
+      _filterFeedback = 'Filters applied: Min Price: ${_minPrice ?? 'Any'} - Max Price: ${_maxPrice ?? 'Any'}';
+    });
+  }
+
+  // Reset filters
+  void _resetFilter() {
+    setState(() {
+      _minPriceController.clear();
+      _maxPriceController.clear();
+      _minPrice = null;
+      _maxPrice = null;
+      _filterFeedback = 'Filters reset';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('CRUD operations'),
         actions: [
-          // Search bar in AppBar
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: IconButton(
@@ -128,7 +157,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      // Using StreamBuilder to display all products from Firestore
       body: Column(
         children: [
           // Search bar at the top
@@ -148,17 +176,75 @@ class _HomePageState extends State<HomePage> {
               },
             ),
           ),
-          // StreamBuilder to display products from Firestore based on search query
+          // Filter section
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _minPriceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Min Price',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _maxPriceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Max Price',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.filter_list),
+                  onPressed: _filterProducts,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _resetFilter,
+                ),
+              ],
+            ),
+          ),
+          // Display filter feedback
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Text(
+              _filterFeedback,
+              style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.blue),
+            ),
+          ),
+          // StreamBuilder to display filtered products
           Expanded(
             child: StreamBuilder(
               stream: _products.snapshots(),
               builder: (context, AsyncSnapshot<QuerySnapshot> streamSnapshot) {
                 if (streamSnapshot.hasData) {
-                  final filteredProducts = streamSnapshot.data!.docs
-                      .where((documentSnapshot) {
+                  final filteredProducts = streamSnapshot.data!.docs.where((documentSnapshot) {
                     final name = documentSnapshot['name'].toString().toLowerCase();
-                    return name.contains(_searchQuery);
+                    final price = documentSnapshot['price'];
+
+                    // Check if the product matches search query and price range
+                    final matchesSearch = name.contains(_searchQuery);
+                    final matchesPriceRange =
+                        (_minPrice == null || price >= _minPrice!) &&
+                            (_maxPrice == null || price <= _maxPrice!);
+
+                    return matchesSearch && matchesPriceRange;
                   }).toList();
+
+                  if (filteredProducts.isEmpty) {
+                    return const Center(
+                      child: Text('No products found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    );
+                  }
 
                   return ListView.builder(
                     itemCount: filteredProducts.length,
@@ -195,7 +281,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      // Add new product
       floatingActionButton: FloatingActionButton(
         onPressed: () => _createOrUpdate(),
         child: const Icon(Icons.add),
@@ -245,6 +330,12 @@ class ProductSearchDelegate extends SearchDelegate {
           final name = documentSnapshot['name'].toString().toLowerCase();
           return name.contains(query.toLowerCase());
         }).toList();
+
+        if (filteredProducts.isEmpty) {
+          return const Center(
+            child: Text('No products found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          );
+        }
 
         return ListView.builder(
           itemCount: filteredProducts.length,
