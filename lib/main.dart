@@ -11,10 +11,10 @@ void main() async {
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return const MaterialApp(
-      // Remove the debug banner
       debugShowCheckedModeBanner: false,
       title: 'Test',
       home: HomePage(),
@@ -24,17 +24,20 @@ class MyApp extends StatelessWidget {
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  // text fields' controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-  final CollectionReference _products = FirebaseFirestore.instance.collection(
-    'products',
-  );
+  final TextEditingController _searchController = TextEditingController(); // Added search controller
+  final CollectionReference _products = FirebaseFirestore.instance.collection('products');
+
+  String _searchQuery = ''; // Variable to store the search query
+
+  // Create or update product
   Future<void> _createOrUpdate([DocumentSnapshot? documentSnapshot]) async {
     String action = 'create';
     if (documentSnapshot != null) {
@@ -42,6 +45,7 @@ class _HomePageState extends State<HomePage> {
       _nameController.text = documentSnapshot['name'];
       _priceController.text = documentSnapshot['price'].toString();
     }
+
     await showModalBottomSheet(
       isScrollControlled: true,
       context: context,
@@ -74,11 +78,9 @@ class _HomePageState extends State<HomePage> {
                   double price = double.parse(_priceController.text);
                   if (name.isNotEmpty && price != null) {
                     if (action == 'create') {
-                      // Persist a new product to Firestore
                       await _products.add({"name": name, "price": price});
                     }
                     if (action == 'update') {
-                      // Update the product
                       await _products.doc(documentSnapshot!.id).update({
                         "name": name,
                         "price": price,
@@ -108,45 +110,90 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('CRUD operations')),
-      // Using StreamBuilder to display all products from Firestore inreal-time
-      body: StreamBuilder(
-        stream: _products.snapshots(),
-        builder: (context, AsyncSnapshot<QuerySnapshot> streamSnapshot) {
-          if (streamSnapshot.hasData) {
-            return ListView.builder(
-              itemCount: streamSnapshot.data!.docs.length,
-              itemBuilder: (context, index) {
-                final DocumentSnapshot documentSnapshot =
-                    streamSnapshot.data!.docs[index];
-                return Card(
-                  margin: const EdgeInsets.all(10),
-                  child: ListTile(
-                    title: Text(documentSnapshot['name']),
-                    subtitle: Text(documentSnapshot['price'].toString()),
-                    trailing: SizedBox(
-                      width: 100,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit),
-                            onPressed: () => _createOrUpdate(documentSnapshot),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete),
-                            onPressed:
-                                () => _deleteProduct(documentSnapshot.id),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+      appBar: AppBar(
+        title: const Text('CRUD operations'),
+        actions: [
+          // Search bar in AppBar
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {
+                showSearch(
+                  context: context,
+                  delegate: ProductSearchDelegate(_products),
                 );
               },
-            );
-          }
-          return const Center(child: CircularProgressIndicator());
-        },
+            ),
+          ),
+        ],
+      ),
+      // Using StreamBuilder to display all products from Firestore
+      body: Column(
+        children: [
+          // Search bar at the top
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: 'Search products...',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (query) {
+                setState(() {
+                  _searchQuery = query.toLowerCase();
+                });
+              },
+            ),
+          ),
+          // StreamBuilder to display products from Firestore based on search query
+          Expanded(
+            child: StreamBuilder(
+              stream: _products.snapshots(),
+              builder: (context, AsyncSnapshot<QuerySnapshot> streamSnapshot) {
+                if (streamSnapshot.hasData) {
+                  final filteredProducts = streamSnapshot.data!.docs
+                      .where((documentSnapshot) {
+                    final name = documentSnapshot['name'].toString().toLowerCase();
+                    return name.contains(_searchQuery);
+                  }).toList();
+
+                  return ListView.builder(
+                    itemCount: filteredProducts.length,
+                    itemBuilder: (context, index) {
+                      final documentSnapshot = filteredProducts[index];
+                      return Card(
+                        margin: const EdgeInsets.all(10),
+                        child: ListTile(
+                          title: Text(documentSnapshot['name']),
+                          subtitle: Text(documentSnapshot['price'].toString()),
+                          trailing: SizedBox(
+                            width: 100,
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () => _createOrUpdate(documentSnapshot),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete),
+                                  onPressed: () => _deleteProduct(documentSnapshot.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }
+                return const Center(child: CircularProgressIndicator());
+              },
+            ),
+          ),
+        ],
       ),
       // Add new product
       floatingActionButton: FloatingActionButton(
@@ -154,5 +201,70 @@ class _HomePageState extends State<HomePage> {
         child: const Icon(Icons.add),
       ),
     );
+  }
+}
+
+// Search delegate for filtering the product list based on search query
+class ProductSearchDelegate extends SearchDelegate {
+  final CollectionReference productsCollection;
+
+  ProductSearchDelegate(this.productsCollection);
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, null);
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    return FutureBuilder<QuerySnapshot>(
+      future: productsCollection.get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final filteredProducts = snapshot.data!.docs.where((documentSnapshot) {
+          final name = documentSnapshot['name'].toString().toLowerCase();
+          return name.contains(query.toLowerCase());
+        }).toList();
+
+        return ListView.builder(
+          itemCount: filteredProducts.length,
+          itemBuilder: (context, index) {
+            final documentSnapshot = filteredProducts[index];
+            return ListTile(
+              title: Text(documentSnapshot['name']),
+              subtitle: Text(documentSnapshot['price'].toString()),
+              onTap: () {
+                // You can perform actions when an item is tapped, e.g., navigate to product details
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return Container();
   }
 }
